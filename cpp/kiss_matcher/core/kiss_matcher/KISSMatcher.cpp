@@ -42,6 +42,70 @@ void KISSMatcher::resetSolver() {
   solver_ = std::make_unique<RobustRegistrationSolver>(params);
 }
 
+std::pair<std::vector<Eigen::Vector3f>&, std::vector<Eigen::VectorXf>&> KISSMatcher::extract_feature(const std::vector<Eigen::Vector3f> points){
+  clear();
+  auto processInput = [&](const std::vector<Eigen::Vector3f> &input_cloud) {
+    if (config_.use_voxel_sampling_) {
+      return VoxelgridSampling(input_cloud, config_.voxel_size_);
+    }
+    return input_cloud;
+  };
+  std::vector<Eigen::Vector3f> keypoints, points_processed; 
+  std::vector<Eigen::VectorXf> descriptors;
+
+  auto t_init = std::chrono::high_resolution_clock::now();
+
+  points_processed = std::move(processInput(points));
+
+  auto t_process = std::chrono::high_resolution_clock::now();
+
+  faster_pfh_->setInputCloud(points_processed);
+  faster_pfh_->ComputeFeature(keypoints, descriptors);
+
+  auto t_mid = std::chrono::high_resolution_clock::now();
+
+  processing_time_ =
+      std::chrono::duration_cast<std::chrono::duration<double>>(t_process - t_init).count();
+  extraction_time_ =
+      std::chrono::duration_cast<std::chrono::duration<double>>(t_mid - t_process).count();
+
+  return {keypoints, descriptors};
+}
+
+kiss_matcher::RegistrationSolution KISSMatcher::registrate(std::pair<std::vector<Eigen::Vector3f>&, std::vector<Eigen::VectorXf>&> src, std::pair<std::vector<Eigen::Vector3f>&, std::vector<Eigen::VectorXf>&> tgt){
+  const auto &corr = robin_matching_->establishCorrespondences(src.first,
+                                                               tgt.first,
+                                                               src.second,
+                                                               tgt.second,
+                                                               config_.robin_mode_,
+                                                               config_.tuple_scale_,
+                                                               config_.use_ratio_test_);
+
+  src_matched_.resize(corr.size());
+  tgt_matched_.resize(corr.size());
+
+  for (size_t i = 0; i < corr.size(); ++i) {
+    auto src_idx    = std::get<0>(corr[i]);
+    auto dst_idx    = std::get<1>(corr[i]);
+    src_matched_[i] = src_keypoints_[src_idx];
+    tgt_matched_[i] = tgt_keypoints_[dst_idx];
+  }
+
+
+  size_t M                               = src_matched_.size();
+
+  Eigen::Matrix<double, 3, Eigen::Dynamic> src_matched_eigen;
+  Eigen::Matrix<double, 3, Eigen::Dynamic> tgt_matched_eigen;
+
+  src_matched_eigen.resize(3, M);
+  tgt_matched_eigen.resize(3, M);
+  for (size_t m = 0; m < M; ++m) {
+    src_matched_eigen.col(m) << src_matched_[m].cast<double>();
+    tgt_matched_eigen.col(m) << tgt_matched_[m].cast<double>();
+  }
+  return solve(src_matched_eigen, tgt_matched_eigen);
+}
+
 kiss_matcher::KeypointPair KISSMatcher::match(const std::vector<Eigen::Vector3f> &src,
                                               const std::vector<Eigen::Vector3f> &tgt) {
   clear();

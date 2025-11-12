@@ -150,6 +150,9 @@ class KISSMatcher {
   KeypointPair match(const std::vector<Eigen::Vector3f> &src,
                      const std::vector<Eigen::Vector3f> &tgt);
 
+kiss_matcher::RegistrationSolution registrate(std::pair<std::vector<Eigen::Vector3f>&, std::vector<Eigen::VectorXf>&> src, std::pair<std::vector<Eigen::Vector3f>&, std::vector<Eigen::VectorXf>&> tgt);
+std::pair<std::vector<Eigen::Vector3f>&, std::vector<Eigen::VectorXf>&> extract_feature(const std::vector<Eigen::Vector3f> points);
+
   /**
    * @brief Matches keypoints between source and target voxelized point clouds (Eigen format).
    * @param src Source point cloud in Eigen format.
